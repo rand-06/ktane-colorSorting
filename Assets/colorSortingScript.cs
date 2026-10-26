@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -8,15 +9,20 @@ using System.Text.RegularExpressions;
 public class colorSortingScript : MonoBehaviour
 {
 	public GameObject button;
-	private GameObject[] buttons;
-	private TextMesh[] colorblindTexts;
 	public KMSelectable colorblindToggle;
 	public Transform buttonParent;
+	public TextMesh[] leafNumbers;
+	
+	private GameObject[] buttons;
+	private TextMesh[] colorblindTexts;
 	private int size;
 	private float r;
 	private List<int> config;
 	private int selected = -1;
 	private bool moduleSolved;
+	private string[] coordinates;
+	
+	bool TwitchPlaysActive;
 
 	private readonly List<Color> colors = new List<Color>
 	{
@@ -46,9 +52,16 @@ public class colorSortingScript : MonoBehaviour
 			config[selected] = config[index];
 			config[index] = temp;
 			buttons[index].GetComponent<MeshRenderer>().material.color = colors[config[index]];
-			colorblindTexts[index].text = colorLetters[config[index]].ToString();
 			buttons[selected].GetComponent<MeshRenderer>().material.color = colors[config[selected]];
-			colorblindTexts[selected].text = colorLetters[config[selected]].ToString();
+			Color tempColor = colorblindTexts[selected].color;
+			colorblindTexts[selected].color = colorblindTexts[index].color;
+			colorblindTexts[index].color = tempColor;
+			if (colorblindTexts[0].text.Length == 1)
+			{
+				colorblindTexts[index].text = colorLetters[config[index]].ToString();
+				colorblindTexts[selected].text = colorLetters[config[selected]].ToString();
+			}
+
 			selected = -1;
 			if (!moduleSolved && check())
 			{
@@ -84,16 +97,12 @@ public class colorSortingScript : MonoBehaviour
 	
 	void Awake()
 	{
-		print("Awake is running");
 		ModConfig<ColorSortingSettings> modConfig = new ModConfig<ColorSortingSettings>("ColorSortingSettings");
 		Settings = modConfig.Settings;
 		modConfig.Settings = Settings;
 		TryOverrideMission();
-		size = Settings.size < 1 || Settings.size>35?3:Settings.size;
-		
-		
+		size = Settings.size < 1 || Settings.size>20 ?3:Settings.size;
 		buttons = Enumerable.Range(0, 6*size*size).Select(x => Instantiate(button, buttonParent)).ToArray();
-		print(buttons.Length);
 		button.SetActive(false);
 		GetComponent<KMSelectable>().Children = Enumerable.Range(0, 6*size*size+1)
 			.Select(x => x==0?colorblindToggle:buttons[x-1].GetComponent<KMSelectable>()).ToArray();
@@ -102,26 +111,51 @@ public class colorSortingScript : MonoBehaviour
 		float buttonPosY = button.transform.localPosition.y;
 		config = Enumerable.Range(0, 6 * size * size).Select(index => index/size/size).ToList().Shuffle();
 		colorblindTexts = buttons.Select(x => x.transform.GetComponentInChildren<TextMesh>()).ToArray();
-		for (int i = 0; i < 6 * size * size; i++)
+		GetComponent<KMBombModule>().OnActivate += delegate
 		{
-			int index = i;
-			buttons[index].GetComponent<MeshRenderer>().material.color = colors[config[index]];
-			colorblindTexts[index].text = colorLetters[config[index]].ToString();
-			colorblindTexts[index].gameObject.SetActive(false);
-			buttons[index].transform.localScale = buttonSize;
-			buttons[index].transform.localPosition = new Vector3(getX(index), buttonPosY, getY(index));
-			buttons[index].GetComponent<KMSelectable>().OnInteract += delegate
+			if (TwitchPlaysActive) coordinates = new string[6 * size * size];
+			else foreach (var leafNumber in leafNumbers) leafNumber.text = "";
+
+			for (int i = 0; i < 6 * size * size; i++)
 			{
-				press(index);
+				int index = i;
+				buttons[index].GetComponent<MeshRenderer>().material.color = colors[config[index]];
+				if (config[index] == 3 || config[index] == 5) colorblindTexts[index].color = Color.black;
+				if (TwitchPlaysActive)
+				{
+					int coord = index % (size * size);
+					coordinates[index] = (char)(coord % size + 'A') + (coord / size + 1).ToString();
+					colorblindTexts[index].text = coordinates[index];
+				}
+				else
+				{
+					colorblindTexts[index].text = "";
+				}
+
+				buttons[index].transform.localScale = buttonSize;
+				buttons[index].transform.localPosition = new Vector3(getX(index), buttonPosY, getY(index));
+				buttons[index].GetComponent<KMSelectable>().OnInteract += delegate
+				{
+					press(index);
+					return false;
+				};
+			}
+
+			colorblindToggle.OnInteract += delegate
+			{
+				bool colorblindMode = colorblindTexts[0].text.Length == 1;
+				for (int i = 0; i < 6 * size * size; i++)
+				{
+					colorblindTexts[i].text = (!colorblindMode
+						? colorLetters[config[i]].ToString()
+						: TwitchPlaysActive
+							? coordinates[i]
+							: "");
+				}
+
 				return false;
 			};
-		}
-		colorblindToggle.OnInteract += delegate
-		{
-			foreach(TextMesh t in colorblindTexts) t.gameObject.SetActive(!t.gameObject.activeSelf);
-			return false;
 		};
-		
 	}
 
 	private ColorSortingSettings Settings = new ColorSortingSettings();
@@ -129,9 +163,7 @@ public class colorSortingScript : MonoBehaviour
 	void TryOverrideMission()
 	{
 		var desc = Game.Mission.Description ?? "";
-		print(desc);
 		Match regexMatchCountVariants = Regex.Match(desc, @"\[Color Sorting\]\s(\d+)");
-		print(regexMatchCountVariants.Groups[1].Value);
 		if (!regexMatchCountVariants.Success) return;
 		int? valueMatches = regexMatchCountVariants.Groups[1].Value.TryParseInt();
 		if (valueMatches != null) Settings.size = valueMatches.Value;
@@ -159,4 +191,35 @@ public class colorSortingScript : MonoBehaviour
 		}
 	};
 	
+#pragma warning disable 414
+	private readonly string TwitchHelpMessage = @"Use !{0} #X# to input a button to press. Chain the command by spaces. For example: !{0} 1A1 3B2. Use !{0} colorblind to toggle colorblind mode.";
+#pragma warning restore 414
+	
+	public IEnumerator ProcessTwitchCommand(string Command)
+	{
+		yield return null;
+		List<string> args = Command.ToUpper().Trim().Split(' ').Where(x => !string.IsNullOrEmpty(x)).ToList();
+		if (args[0] == "COLORBLIND") { colorblindToggle.OnInteract(); yield break;}
+		foreach (string arg in args)
+		{
+			if (Regex.IsMatch(arg, @"[1-6][A-T]\d+$"))
+			{
+				Match match = Regex.Match(arg, @"([1-6])([A-T])(\d+)$");
+				int leaf = int.Parse(match.Groups[1].Value)-1;
+				int col = char.Parse(match.Groups[2].Value)-'A';
+				int row =  int.Parse(match.Groups[3].Value)-1;
+				if (leaf > 5 || col >= size || row >= size) yield break;
+				yield return null;
+				press(leaf * size * size + row * size + col);
+			}
+			else yield break;
+		}
+	}
+
+	public IEnumerator TwitchHandleForcedSolve()
+	{
+		yield return null;
+		GetComponent<KMBombModule>().HandlePass();
+		moduleSolved = true;
+	}
 }
