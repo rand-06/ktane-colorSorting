@@ -219,7 +219,39 @@ public class colorSortingScript : MonoBehaviour
 	public IEnumerator TwitchHandleForcedSolve()
 	{
 		yield return null;
-		GetComponent<KMBombModule>().HandlePass();
-		moduleSolved = true;
+		for(int targetLeaf = 0; targetLeaf < 5; targetLeaf++) {
+			int targetIndex = 0;
+
+			targetIndex = getNextTargetIndex(targetLeaf, targetIndex);
+
+			for (int observedLeaf = targetLeaf+1; observedLeaf < 6; observedLeaf++) {
+				for(int observedIndex = 0; observedIndex < size * size; observedIndex++) {
+
+					if (config[observedLeaf * size * size + observedIndex] == targetLeaf) {
+						press(observedLeaf * size * size + observedIndex);
+						yield return new WaitForSeconds(1f / size / size);
+						press(targetLeaf * size * size + targetIndex);
+						yield return new WaitForSeconds(1f / size / size);
+
+						if(moduleSolved) yield break;
+					}
+
+					targetIndex = getNextTargetIndex(targetLeaf, targetIndex);
+
+				}
+			}
+
+		}
+	}
+
+	int getNextTargetIndex(int targetLeaf, int targetIndex) {
+		while (targetIndex < size * size) {
+			if (config[targetLeaf * size * size + targetIndex] == targetLeaf) {
+				targetIndex++;
+				continue;
+			}
+			break;
+		}
+		return targetIndex;
 	}
 }
